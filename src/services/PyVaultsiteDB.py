@@ -26,6 +26,7 @@ from urllib.parse import quote_plus
 try:
     from sqlalchemy import (
         Boolean, Column, DateTime, Integer, MetaData, String, Table, Unicode,
+        Uuid,
         and_, create_engine, delete, func, insert, select, text, update,
     )
     from sqlalchemy.engine import Engine, URL
@@ -60,6 +61,36 @@ tbl_transaction = Table(
     schema="dbo",
 )
 
+controller = Table(
+    "Controller", metadata,
+    Column("Controller_RecID", Uuid, primary_key=True),
+    Column("TagName", Unicode(30), nullable=False), Column("SiteCode", String(50)),
+    Column("Workstation", Unicode(50), nullable=False), Column("UnitNo", String(4)),
+    Column("Desc", Unicode(50)), Column("OpenTime", Integer, nullable=False),
+    Column("ReleaseTime", Integer, nullable=False), Column("RelTZ", Integer, nullable=False),
+    Column("CardPinInTZ", Integer, nullable=False), Column("CardPinOutTZ", Integer, nullable=False),
+    Column("UnitPinNo", String(40)), Column("UnitPinNoTZ", String(20)),
+    Column("AutoPin", Boolean, nullable=False), Column("CardPinMode", Boolean, nullable=False),
+    Column("CardLockOut", Boolean, nullable=False), Column("Buzzer", Boolean, nullable=False),
+    Column("PushButtonTZ", Integer, nullable=False), Column("AntiPBTZ", Integer, nullable=False),
+    Column("EntryCam", String(50)), Column("ExitCam", String(50)),
+    Column("EntryCam1", String(50)), Column("ExitCam1", String(50)),
+    Column("EntryCam2", String(50)), Column("ExitCam2", String(50)),
+    Column("ControllerType", Unicode(50)), Column("ReportMode", Boolean),
+    Column("GTMode", Boolean), Column("IOMode", Boolean), Column("RCMode", Boolean),
+    Column("AlarmMode", String(50)), Column("LiftMode", String(50)), Column("Status", Boolean),
+    *[Column(f"Controller_{i:02d}", String(100)) for i in range(1, 26)],
+    Column("DualCardMode", Boolean), Column("DualCardInTZ", Integer),
+    Column("DualCardOutTZ", Integer), Column("RackOutputControl", Integer),
+    Column("RackID", Integer), Column("LastTrCode", String(2)),
+    Column("InterlockingMode", Boolean, nullable=False), Column("CarParkCounterMode", Boolean, nullable=False),
+    Column("CarParkGroupID", Unicode(3), nullable=False), Column("PersonCounterMode", Boolean, nullable=False),
+    Column("PersonCounterGroupID", Unicode(3), nullable=False),
+    Column("TurnstilePernaltyMode", Boolean, nullable=False), Column("CanteenMode", Boolean, nullable=False),
+    Column("FPEntry", Unicode(50)), Column("FPExit", Unicode(50)),
+    Column("InBeaconMac", Unicode(30)), Column("OutBeaconMac", Unicode(30)), schema="dbo",
+)
+
 tbl_mapping = Table(
     "tblMappingControllerCam", metadata,
     Column("Id", Integer, primary_key=True), Column("UnitNo", String(4)),
@@ -86,6 +117,7 @@ eventos_integracao = Table(
 
 TABLES = {
     "transactions": tbl_transaction,
+    "controllers": controller,
     "mappings": tbl_mapping,
     "logs": log_requests,
     "audit_events": eventos_integracao,
@@ -203,6 +235,7 @@ class Vault:
         except SQLAlchemyError as exc:
             raise VaultDBError(f"Não foi possível configurar a conexão com {hostname}: {exc}") from exc
         self.transactions = _TableGateway(self, tbl_transaction)
+        self.controllers = _TableGateway(self, controller)
         self.mapeamentos = _TableGateway(self, tbl_mapping)
         self.logs = _TableGateway(self, log_requests)
         self.eventos = _TableGateway(self, eventos_integracao)
