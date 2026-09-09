@@ -9,6 +9,7 @@ authors = [
 ]
 dependencies = [
     "flet>=0.86.5",
+    "flet-charts>=0.86.5",
     "SQLAlchemy>=2.0,<3",
     "pyodbc>=5.0",
 ]

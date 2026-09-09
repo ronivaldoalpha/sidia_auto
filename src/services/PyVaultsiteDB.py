@@ -27,7 +27,7 @@ try:
     from sqlalchemy import (
         Boolean, Column, DateTime, Integer, MetaData, String, Table, Unicode,
         Uuid,
-        and_, create_engine, delete, func, insert, select, text, update,
+        and_, create_engine, delete, func, inspect, insert, select, text, update,
     )
     from sqlalchemy.engine import Engine, URL
     from sqlalchemy.exc import SQLAlchemyError
@@ -115,12 +115,26 @@ eventos_integracao = Table(
     Column("TrNome", Unicode(50)), schema="dbo",
 )
 
+system_settings = Table(
+    "SystemSettings", metadata,
+    Column("Id", Integer, primary_key=True),
+    Column("ServiceType", Unicode(30), nullable=False),
+    Column("ServiceName", Unicode(100), nullable=False),
+    Column("Hostname", Unicode(255)), Column("Port", Integer),
+    Column("DatabaseName", Unicode(128)), Column("Username", Unicode(255)),
+    Column("Password", Unicode(1024)), Column("AuthMode", Unicode(30)),
+    Column("Enabled", Boolean, nullable=False),
+    Column("CreatedAt", DateTime), Column("UpdatedAt", DateTime),
+    schema="dbo",
+)
+
 TABLES = {
     "transactions": tbl_transaction,
     "controllers": controller,
     "mappings": tbl_mapping,
     "logs": log_requests,
     "audit_events": eventos_integracao,
+    "system_settings": system_settings,
 }
 
 
@@ -217,7 +231,8 @@ class Vault:
             raise VaultValidationError("hostname e database são obrigatórios")
         if auth is not None and (not isinstance(auth, (tuple, list)) or len(auth) != 2):
             raise VaultValidationError("auth deve ser None ou uma tupla (usuario, senha)")
-        self.hostname, self.database, self.driver = hostname, database, driver
+        self.hostname, self.database, self.driver, self.auth = hostname, database, driver, auth
+        self.connect_args = dict(connect_args or {})
         query = {"driver": driver}
         if auth is None:
             query["trusted_connection"] = "yes"
@@ -230,7 +245,7 @@ class Vault:
         options = {"pool_pre_ping": True, "future": True, "echo": echo}
         options.update(engine_options)
         try:
-            self.engine: Engine = create_engine(url, connect_args=dict(connect_args or {}), **options)
+            self.engine: Engine = create_engine(url, connect_args=self.connect_args, **options)
             self.Session = sessionmaker(bind=self.engine, future=True, expire_on_commit=False)
         except SQLAlchemyError as exc:
             raise VaultDBError(f"Não foi possível configurar a conexão com {hostname}: {exc}") from exc
@@ -239,6 +254,7 @@ class Vault:
         self.mapeamentos = _TableGateway(self, tbl_mapping)
         self.logs = _TableGateway(self, log_requests)
         self.eventos = _TableGateway(self, eventos_integracao)
+        self.system_settings = _TableGateway(self, system_settings)
         # Aliases em inglês para facilitar integração com código existente.
         self.mapping = self.mapeamentos
         self.audit_events = self.eventos
@@ -259,6 +275,35 @@ class Vault:
         with self.engine.connect() as connection:
             connection.execute(text("SELECT 1"))
         return True
+
+    def testar_servidor(self) -> bool:
+        """Testa o SQL Server usando ``master``, antes de testar o banco alvo."""
+        query = {"driver": self.driver, "TrustServerCertificate": "yes"}
+        if self.auth is None:
+            query["trusted_connection"] = "yes"
+        url = URL.create(
+            "mssql+pyodbc",
+            username=None if self.auth is None else str(self.auth[0]),
+            password=None if self.auth is None else str(self.auth[1]),
+            host=self.hostname,
+            database="master",
+            query=query,
+        )
+        engine = create_engine(url, connect_args=self.connect_args, pool_pre_ping=True, future=True)
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            return True
+        finally:
+            engine.dispose()
+
+    def tabelas_dependentes(self) -> list[str]:
+        return ["Controller", "tblTransaction", "tblMappingControllerCam", "logrequeststrasaction", "SystemSettings"]
+
+    def verificar_tabelas_dependentes(self) -> list[str]:
+        """Retorna as tabelas dbo ausentes no banco já conectado."""
+        inspector = inspect(self.engine)
+        return [name for name in self.tabelas_dependentes() if not inspector.has_table(name, schema="dbo")]
 
     def executar(self, sql: str, params: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Executa SQL parametrizado e retorna linhas, quando houver.
@@ -315,6 +360,10 @@ class Vault:
         podem não ter todas as chaves descritas no dicionário fornecido.
         """
         metadata.create_all(self.engine, checkfirst=True)
+
+    def criar_tabela_configuracoes(self) -> None:
+        """Cria somente ``dbo.SystemSettings`` se ela ainda não existir."""
+        system_settings.create(self.engine, checkfirst=True)
 
     def dispose(self) -> None:
         """Libera o pool de conexões."""

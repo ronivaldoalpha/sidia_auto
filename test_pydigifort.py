@@ -5,6 +5,10 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "services"))
+
 from pydigifort import AuthConfig, DigifortAPIError, Servidor
 
 seen = []

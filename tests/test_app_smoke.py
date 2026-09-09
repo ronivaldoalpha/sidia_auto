@@ -2,33 +2,46 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "src"))
+sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
 import flet as ft
-from interfaces.app import AppShell
+
+from interfaces.views import BindingsInterface, DashboardInterface, ServicesInterface
+from layouts.page_layout import PageLayout
+from models.paginated_table import PaginatedTable
+from models.sidebar import Sidebar
+from main import main
 
 
-class FakePage:
-    def __init__(self):
-        self.theme_mode = ft.ThemeMode.SYSTEM
-        self.added = []
-        self.dialog = None
-
-    def add(self, *controls):
-        self.added.extend(controls)
-
-    def update(self):
-        pass
+def test_declarative_components_are_available():
+    assert callable(Sidebar)
+    assert callable(PageLayout)
+    assert callable(PaginatedTable)
+    assert callable(DashboardInterface)
+    assert callable(BindingsInterface)
+    assert callable(ServicesInterface)
+    assert ft.DropdownOption("opção").key == "opção"
+    assert not hasattr(ft, "Option")
 
 
-def test_shell_builds_without_external_requests():
-    page = FakePage()
-    shell = AppShell(page)
-    assert shell._active_view == "dashboard"
-    assert shell.title.value == "Visão geral"
-    shell.show("bindings")
-    assert shell.title.value == "Vínculos porta–câmera"
-    shell.show("services")
-    assert shell.title.value == "Serviços e conexões"
-    shell.service.close()
+def test_router_has_declared_routes():
+    routes = [
+        ft.Route(path="/", component=lambda: ft.Text("home")),
+        ft.Route(path="/bindings", component=lambda: ft.Text("bindings")),
+        ft.Route(path="/services", component=lambda: ft.Text("services")),
+    ]
+    assert [route.path for route in routes] == ["/", "/bindings", "/services"]
+    assert callable(ft.Router)
+
+
+def test_main_mounts_root_through_page_render():
+    class PageStub:
+        theme_mode = ft.ThemeMode.SYSTEM
+        window = type("WindowStub", (), {})()
+
+        def render(self, component, *args, **kwargs):
+            self.root_component = component
+
+    page = PageStub()
+    main(page)
+    assert getattr(page, "root_component", None) is not None

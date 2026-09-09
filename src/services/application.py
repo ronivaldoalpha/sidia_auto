@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-# As bibliotecas legadas ficam na raiz do projeto e continuam reutilizáveis.
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
 if TYPE_CHECKING:
-    from services.PyVaultsiteDB import Vault
-    from services.pydigifort import Servidor
+    from .PyVaultsiteDB import Vault
+    from .pydigifort import Servidor
 
 
 @dataclass
@@ -27,7 +20,7 @@ class DigifortConfig:
     enabled: bool = True
 
     def client(self) -> Servidor:
-        from services.pydigifort import AuthConfig, Servidor
+        from .pydigifort import AuthConfig, Servidor
         auth = AuthConfig(self.username, self.password, self.auth_mode) if self.username else None
         return Servidor(self.hostname, self.port, auth)
 
@@ -39,9 +32,12 @@ class ServiceHealth:
     online: bool | None
     detail: str
     checked_at: datetime | None = None
+    credential_error: bool = False
 
     @property
     def label(self) -> str:
+        if self.credential_error:
+            return "CREDENCIAL"
         return "ONLINE" if self.online is True else "OFF-LINE" if self.online is False else "NÃO VERIFICADO"
 
 
@@ -61,8 +57,18 @@ class ApplicationService:
 
     def __init__(self) -> None:
         self.state = AppState()
-        from services.PyVaultsiteDB import Vault
-        self.database = Vault()
+        from .PyVaultsiteDB import Vault
+        from utils.secrets import load_database_secret
+        secret = load_database_secret()
+        self.database = Vault(**secret.vault_kwargs())
+        try:
+            self.database.criar_tabela_configuracoes()
+            self._load_digifort_configs()
+        except Exception as exc:
+            # A UI pode iniciar off-line; a configuração será carregada quando
+            # o banco estiver disponível e o health check for executado.
+            from .error_handling import log_error
+            log_error("inicializar configurações do sistema", exc)
         self.event_types = [
             "Acesso Autorizado", "Acesso Negado", "Crachá Vencido",
             "Cartão Não Cadastrado", "Porta Forçada", "Porta Mantida Aberta",
@@ -103,8 +109,87 @@ class ApplicationService:
             for item in value:
                 self._collect_names(item, output)
 
-    def add_digifort(self, config: DigifortConfig) -> None:
-        self.state.digifort.append(config)
+    def add_digifort(self, config: DigifortConfig) -> tuple[bool, str]:
+        try:
+            self._persist_digifort(config)
+            self.state.digifort.append(config)
+            return True, f"Servidor {config.name} salvo."
+        except Exception as exc:
+            from .error_handling import log_error
+            info = log_error("salvar servidor Digifort", exc, context={"server": config.name, "host": config.hostname})
+            return False, info.user_message
+
+    def update_digifort(self, original_name: str, config: DigifortConfig) -> tuple[bool, str]:
+        for index, current in enumerate(self.state.digifort):
+            if current.name == original_name:
+                try:
+                    self._persist_digifort(config, original_name=original_name)
+                    self.state.digifort[index] = config
+                    self.state.health.pop(original_name, None)
+                    return True, f"Servidor {config.name} atualizado."
+                except Exception as exc:
+                    from .error_handling import log_error
+                    info = log_error("editar servidor Digifort", exc, context={"server": original_name, "host": config.hostname})
+                    return False, info.user_message
+        return False, "Servidor Digifort não encontrado."
+
+    def remove_digifort(self, name: str) -> tuple[bool, str]:
+        before = len(self.state.digifort)
+        try:
+            self.database.system_settings.excluir({"ServiceType": "DIGIFORT", "ServiceName": name})
+            self.state.digifort = [item for item in self.state.digifort if item.name != name]
+            self.state.health.pop(name, None)
+            return len(self.state.digifort) < before, f"Servidor {name} excluído."
+        except Exception as exc:
+            from .error_handling import log_error
+            info = log_error("excluir servidor Digifort", exc, context={"server": name})
+            return False, info.user_message
+
+    def _load_digifort_configs(self) -> None:
+        rows = self.database.system_settings.listar(filters={"ServiceType": "DIGIFORT"}, order_by="ServiceName")
+        self.state.digifort = [DigifortConfig(
+            name=str(row.get("ServiceName") or ""), hostname=str(row.get("Hostname") or ""),
+            port=int(row.get("Port") or 8601), username=str(row.get("Username") or ""),
+            password=str(row.get("Password") or ""), auth_mode=str(row.get("AuthMode") or "safe"),
+            enabled=bool(row.get("Enabled", True)),
+        ) for row in rows if row.get("ServiceName") and row.get("Hostname")]
+
+    def _persist_digifort(self, config: DigifortConfig, *, original_name: str | None = None) -> None:
+        values = {
+            "ServiceType": "DIGIFORT", "ServiceName": config.name, "Hostname": config.hostname,
+            "Port": config.port, "Username": config.username, "Password": config.password,
+            "AuthMode": config.auth_mode, "Enabled": config.enabled, "UpdatedAt": datetime.now(),
+        }
+        filters = {"ServiceType": "DIGIFORT", "ServiceName": original_name or config.name}
+        current = self.database.system_settings.obter(**filters)
+        if current:
+            self.database.system_settings.atualizar({"Id": current["Id"]}, values)
+        else:
+            values["CreatedAt"] = datetime.now()
+            self.database.system_settings.criar(**values)
+
+    def save_database_settings(self, *, hostname: str, database: str, driver: str,
+                               auth_mode: str, username: str = "", password: str = "") -> tuple[bool, str]:
+        """Salva a conexão no .env e troca o engine sem expor a senha na UI."""
+        try:
+            from utils.secrets import DatabaseSecret, save_database_secret
+            if auth_mode == "windows":
+                username, password = "", ""
+            elif not password and getattr(self.database, "auth", None) and username == self.database.auth[0]:
+                password = self.database.auth[1]
+            secret = DatabaseSecret(hostname=hostname.strip(), database=database.strip(), driver=driver.strip(), username=username.strip(), password=password)
+            if not secret.hostname or not secret.database or not secret.driver:
+                raise ValueError("Servidor, banco e driver são obrigatórios.")
+            save_database_secret(secret)
+            from .PyVaultsiteDB import Vault
+            old_database = self.database
+            self.database = Vault(**secret.vault_kwargs())
+            old_database.dispose()
+            return True, "Configuração do banco salva. Use Verificar conexão para validar o acesso."
+        except Exception as exc:
+            from .error_handling import log_error
+            info = log_error("salvar configuração do banco", exc, context={"hostname": hostname, "database": database, "auth_mode": auth_mode})
+            return False, info.user_message
 
     def save_binding(self, tag: str, camera: str, server: str, alert: bool, event: str) -> tuple[bool, str]:
         """Persiste câmera/servidor/alerta no mapeamento existente.
@@ -123,14 +208,24 @@ class ApplicationService:
             self.state.event_preferences[tag] = event
             return True, "Vínculo salvo; o tipo do evento está aguardando a tabela de eventos documentada."
         except Exception as exc:
-            return False, f"Não foi possível salvar o vínculo: {exc}"
+            from .error_handling import log_error
+            info = log_error("salvar vínculo porta-câmera", exc, context={"tag": tag, "camera": camera})
+            return False, info.user_message
 
     def check_database(self) -> ServiceHealth:
         try:
+            self.database.testar_servidor()
             self.database.testar_conexao()
-            health = ServiceHealth("Banco Vault Site", "database", True, "SQL Server respondeu SELECT 1", datetime.now())
+            missing = self.database.verificar_tabelas_dependentes()
+            if missing:
+                detail = "Servidor e banco conectados, mas faltam tabelas: " + ", ".join(missing)
+                health = ServiceHealth("Banco Vault Site", "database", False, detail, datetime.now())
+            else:
+                health = ServiceHealth("Banco Vault Site", "database", True, "SQL Server, banco DataDBEnt e tabelas dependentes disponíveis", datetime.now())
         except Exception as exc:
-            health = ServiceHealth("Banco Vault Site", "database", False, str(exc), datetime.now())
+            from .error_handling import log_error
+            info = log_error("verificar conexão com banco de dados", exc)
+            health = ServiceHealth("Banco Vault Site", "database", False, info.user_message, datetime.now(), info.is_credential)
         self.state.health["database"] = health
         return health
 
@@ -142,7 +237,11 @@ class ApplicationService:
                 detail += f" • {str(payload)[:160]}"
             health = ServiceHealth(config.name, "digifort", True, detail, datetime.now())
         except Exception as exc:
-            health = ServiceHealth(config.name, "digifort", False, str(exc), datetime.now())
+            detail = str(exc)
+            credential_error = any(token in detail.casefold() for token in ("401", "403", "auth", "credential", "senha", "usuário"))
+            from .error_handling import log_error
+            info = log_error("verificar conexão Digifort", exc, context={"server": config.name, "host": config.hostname})
+            health = ServiceHealth(config.name, "digifort", False, info.detail, datetime.now(), credential_error or info.is_credential)
         self.state.health[config.name] = health
         return health
 

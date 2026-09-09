@@ -142,7 +142,15 @@ def card_container_style(*, accent: str | None = None) -> dict[str, Any]:
         "bgcolor": ft.Colors.SURFACE_CONTAINER_LOWEST,
         "border": ft.Border.all(1, accent or ft.Colors.OUTLINE_VARIANT),
         "border_radius": 14,
-        "shadow": [ft.BoxShadow(color="#26011B49", blur_radius=12, spread_radius=0, offset=ft.Offset(0, 4))],
+        "shadow": [
+            ft.BoxShadow(
+                color="#26011B49",
+                blur_radius=0.12,
+                spread_radius=0,
+                offset=ft.Offset(0, 0.4),
+                blur_style=ft.BlurStyle.NORMAL
+            )
+        ],
     }
 
 
