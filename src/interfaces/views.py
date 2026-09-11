@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import flet as ft
 from collections.abc import Callable
+from datetime import datetime, timedelta
 
 from layouts.page_layout import PageLayout
 from models.dialogs import DatabaseDialog, show_digifort_dialog, show_message
 from models.paginated_table import PaginatedTable
 from models.sidebar import Sidebar
 from modules.styles import ButtonVariant, button_style, card_container_style
+from modules.mycharts import AxisSpec, ChartData, ColumnChart, ColumnDatum, DonutChart, DonutDatum, LineChart, LinePoint, LineSeries
 from services.application import ApplicationService, DigifortConfig, ServiceHealth
 
 
@@ -21,27 +23,86 @@ def _metric(label: str, value: str, icon: str, color: str) -> ft.Control:
 
 @ft.component
 def DashboardInterface(*, service: ApplicationService, page: ft.Page) -> ft.Control:
-    metrics = service.metrics()
-    accuracy = metrics.get("taxa_acuracidade", 0.0)
-    health_controls = [_health_row(item) for item in service.state.health.values()]
-    if not health_controls:
-        health_controls = [ft.Text("Clique em atualizar para consultar os serviços")]
+    today = datetime.now().date()
+    default_start = (today - timedelta(days=29)).isoformat()
+    start_text, set_start_text = ft.use_state(default_start)
+    end_text, set_end_text = ft.use_state(today.isoformat())
+    applied_start, set_applied_start = ft.use_state(default_start)
+    applied_end, set_applied_end = ft.use_state(today.isoformat())
+    error, set_error = ft.use_state("")
+
+    def parse_period() -> tuple[datetime, datetime] | None:
+        try:
+            start = datetime.strptime(applied_start, "%Y-%m-%d")
+            end = datetime.strptime(applied_end, "%Y-%m-%d") + timedelta(days=1)
+            if start >= end:
+                raise ValueError
+            return start, end
+        except ValueError:
+            return None
+
+    period = parse_period()
+    if period is None:
+        metrics = {"total": 0, "sucessos": 0, "falhas": 0, "acuracidade": 0.0, "dias": [], "servidores": [], "rows": []}
+        set_error("Use as datas no formato AAAA-MM-DD e confirme um período válido.")
+    else:
+        start, end = period
+        service.state.dashboard_start, service.state.dashboard_end = start, end
+        metrics = service.metrics(start=start, end=end)
+
+    start_field = ft.TextField(label="Início", value=start_text, width=150)
+    end_field = ft.TextField(label="Fim", value=end_text, width=150)
+    start_field.on_change = lambda event: set_start_text(event.control.value or "")
+    end_field.on_change = lambda event: set_end_text(event.control.value or "")
+
+    def apply(_: ft.ControlEvent) -> None:
+        set_applied_start(start_text)
+        set_applied_end(end_text)
+        set_error("")
+
+    def detail(_: ft.ControlEvent) -> None:
+        if period:
+            page.navigate("/dashboard/detail")
+        else:
+            set_error("Corrija o período antes de detalhar.")
+
+    chart_data = ChartData(
+        lines=[
+            LineSeries("Sucessos", tuple(LinePoint(i, item["sucessos"], label=item["data"].strftime("%d/%m")) for i, item in enumerate(metrics["dias"])), color="#7AF27A"),
+            LineSeries("Falhas", tuple(LinePoint(i, item["falhas"], label=item["data"].strftime("%d/%m")) for i, item in enumerate(metrics["dias"])), color=ft.Colors.ERROR),
+        ],
+        donut=[DonutDatum("Sucessos", metrics["sucessos"], color="#7AF27A", title=f"{metrics['acuracidade']:.1f}%"), DonutDatum("Falhas", metrics["falhas"], color=ft.Colors.ERROR, title=f"{100 - metrics['acuracidade']:.1f}%")],
+        columns=[ColumnDatum(item["servidor"], item["sucessos"], failure=item["falhas"], color="#7AF27A") for item in metrics["servidores"]],
+    )
+    line_axis = AxisSpec(title="Dia", labels=tuple((i, item["data"].strftime("%d/%m")) for i, item in enumerate(metrics["dias"]) if i % 5 == 0))
+    health_controls = [_health_row(item) for item in service.state.health.values()] or [ft.Text("Serviços ainda não verificados")]
     return ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=18, controls=[
-        ft.Text("Saúde da integração", color=ft.Colors.ON_SURFACE_VARIANT),
+        ft.Row([ft.Text("Indicadores operacionais", color=ft.Colors.ON_SURFACE_VARIANT), ft.Container(expand=True), start_field, end_field, ft.FilledButton("Aplicar", icon=ft.Icons.FILTER_ALT, on_click=apply), ft.FilledButton("Detalhar", icon=ft.Icons.OPEN_IN_NEW, style=button_style(ButtonVariant.NEUTRAL), on_click=detail)]),
+        ft.Text(error, color=ft.Colors.ERROR, visible=bool(error)),
         ft.ResponsiveRow(columns=12, spacing=14, controls=[
-            ft.Container(col=3, content=_metric("Acuracidade geral", f"{accuracy:.1f}%", ft.Icons.TRENDING_UP, ft.Colors.PRIMARY)),
-            ft.Container(col=3, content=_metric("Eventos analisados", str(metrics.get("total_eventos", 0)), ft.Icons.INSIGHTS_OUTLINED, ft.Colors.TERTIARY)),
-            ft.Container(col=3, content=_metric("Falhas no período", str(metrics.get("falhas", 0)), ft.Icons.WARNING_AMBER_OUTLINED, ft.Colors.ERROR)),
-            ft.Container(col=3, content=_metric("Digifort ativos", str(sum(x.enabled for x in service.state.digifort)), ft.Icons.DNS_OUTLINED, ft.Colors.SECONDARY)),
+            ft.Container(col=3, content=_metric("Acuracidade global", f"{metrics['acuracidade']:.1f}%", ft.Icons.TRENDING_UP, ft.Colors.PRIMARY)),
+            ft.Container(col=3, content=_metric("Sucessos", str(metrics["sucessos"]), ft.Icons.CHECK_CIRCLE_OUTLINE, ft.Colors.SECONDARY)),
+            ft.Container(col=3, content=_metric("Falhas", str(metrics["falhas"]), ft.Icons.WARNING_AMBER_OUTLINED, ft.Colors.ERROR)),
+            ft.Container(col=3, content=_metric("Eventos analisados", str(metrics["total"]), ft.Icons.INSIGHTS_OUTLINED, ft.Colors.TERTIARY)),
         ]),
-        _card(ft.Column([
-            ft.Text("Tendência de falhas diárias", size=17, weight=ft.FontWeight.BOLD),
-            PaginatedTable(metrics.get("logs", []), [("ErrorDateTime", "Data/hora"), ("TrController", "Controladora"), ("ErrorMessage", "Mensagem")], page_size=5),
-        ], spacing=14), accent=ft.Colors.ERROR),
-        _card(ft.Column([
-            ft.Text("Status dos serviços", size=17, weight=ft.FontWeight.BOLD),
-            *health_controls,
-        ], spacing=4), accent=ft.Colors.SECONDARY),
+        ft.ResponsiveRow(columns=12, spacing=14, controls=[
+            ft.Container(col=8, content=_card(ft.Column([ft.Text("Tendência diária: sucessos e falhas", size=17, weight=ft.FontWeight.BOLD), ft.Container(height=300, content=LineChart(data=chart_data, bottom_axis=line_axis, left_axis=AxisSpec(title="Eventos", minimum=0), interactive=True))], spacing=12), accent=ft.Colors.PRIMARY)),
+            ft.Container(col=4, content=_card(ft.Column([ft.Text("Acuracidade global", size=17, weight=ft.FontWeight.BOLD), ft.Container(height=300, content=DonutChart(data=chart_data, center_space_radius=62, interactive=True))], spacing=12), accent=ft.Colors.SECONDARY)),
+        ]),
+        _card(ft.Column([ft.Text("Acuracidade por servidor", size=17, weight=ft.FontWeight.BOLD), ft.Container(height=300, content=ColumnChart(data=chart_data, left_axis=AxisSpec(title="Eventos", minimum=0), interactive=True))], spacing=12), accent=ft.Colors.ERROR),
+        _card(ft.Column([ft.Text("Status dos serviços", size=17, weight=ft.FontWeight.BOLD), *health_controls], spacing=4), accent=ft.Colors.SECONDARY),
+    ])
+
+
+@ft.component
+def DashboardReportInterface(*, service: ApplicationService, page: ft.Page) -> ft.Control:
+    start = service.state.dashboard_start or (datetime.now() - timedelta(days=29))
+    end = service.state.dashboard_end or datetime.now()
+    metrics = service.metrics(start=start, end=end)
+    rows = [{**row, "DataHora": row["DataHora"].strftime("%d/%m/%Y %H:%M:%S")} for row in metrics["rows"]]
+    return ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=16, controls=[
+        ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, tooltip="Voltar", on_click=lambda _: page.navigate("/")), ft.Text("Relatório detalhado", size=22, weight=ft.FontWeight.BOLD), ft.Container(expand=True), ft.Text(f"{start:%d/%m/%Y} a {(end - timedelta(microseconds=1)):%d/%m/%Y}", color=ft.Colors.ON_SURFACE_VARIANT)]),
+        _card(ft.Column([ft.Text(f"{len(rows)} registros usados nos indicadores", color=ft.Colors.ON_SURFACE_VARIANT), PaginatedTable(rows, [("DataHora", "Data/hora"), ("Status", "Status"), ("Servidor", "Servidor"), ("Controladora", "Controladora"), ("Mensagem", "Mensagem")], page_size=10)], spacing=12), accent=ft.Colors.PRIMARY),
     ])
 
 

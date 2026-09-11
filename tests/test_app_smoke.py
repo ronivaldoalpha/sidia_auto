@@ -6,7 +6,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
 import flet as ft
 
-from interfaces.views import BindingsInterface, DashboardInterface, ServicesInterface
+from interfaces.views import BindingsInterface, DashboardInterface, DashboardReportInterface, ServicesInterface
 from layouts.page_layout import PageLayout
 from models.paginated_table import PaginatedTable
 from models.sidebar import Sidebar
@@ -18,6 +18,7 @@ def test_declarative_components_are_available():
     assert callable(PageLayout)
     assert callable(PaginatedTable)
     assert callable(DashboardInterface)
+    assert callable(DashboardReportInterface)
     assert callable(BindingsInterface)
     assert callable(ServicesInterface)
     assert ft.DropdownOption("opção").key == "opção"
@@ -29,8 +30,9 @@ def test_router_has_declared_routes():
         ft.Route(path="/", component=lambda: ft.Text("home")),
         ft.Route(path="/bindings", component=lambda: ft.Text("bindings")),
         ft.Route(path="/services", component=lambda: ft.Text("services")),
+        ft.Route(path="/dashboard/detail", component=lambda: ft.Text("detail")),
     ]
-    assert [route.path for route in routes] == ["/", "/bindings", "/services"]
+    assert [route.path for route in routes] == ["/", "/bindings", "/services", "/dashboard/detail"]
     assert callable(ft.Router)
 
 

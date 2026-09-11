@@ -21,8 +21,13 @@ def _event_handler(handler: EventHandler | None, event: object, chart_type: str,
 def ColumnChart(*, data: ChartData, bottom_axis: AxisSpec = AxisSpec(), left_axis: AxisSpec = AxisSpec(), interactive: bool = True, on_event: EventHandler | None = None, expand: bool = True, height: int | float | None = None) -> ft.Control:
     """Gráfico de colunas reativo às mudanças em ``ChartData.columns``."""
     values = list(data.columns)
-    maximum = left_axis.maximum if left_axis.maximum is not None else max([1.0, *(item.value for item in values)], default=1.0)
-    groups = [fch.BarChartGroup(x=index, rods=[fch.BarChartRod(from_y=0, to_y=item.value, color=resolved_color(item.color, index), tooltip=item.tooltip or item.label, border_radius=4)]) for index, item in enumerate(values)]
+    maximum = left_axis.maximum if left_axis.maximum is not None else max([1.0, *(item.value + item.failure for item in values)], default=1.0)
+    groups = []
+    for index, item in enumerate(values):
+        rods = [fch.BarChartRod(from_y=0, to_y=item.value, color=resolved_color(item.color, index), tooltip=item.tooltip or f"{item.label}: sucesso", border_radius=4)]
+        if item.failure:
+            rods.append(fch.BarChartRod(from_y=0, to_y=item.failure, color=ft.Colors.ERROR, tooltip=f"{item.label}: falha", border_radius=4))
+        groups.append(fch.BarChartGroup(x=index, rods=rods, spacing=4))
     labels = bottom_axis if bottom_axis.labels else replace(bottom_axis, labels=tuple((index, item.label) for index, item in enumerate(values)))
     def event(event: object) -> None:
         index = getattr(event, "group_index", None)
@@ -48,7 +53,7 @@ def LineChart(*, data: ChartData, bottom_axis: AxisSpec = AxisSpec(), left_axis:
 def DonutChart(*, data: ChartData, center_space_radius: float = 42, interactive: bool = True, on_event: EventHandler | None = None, expand: bool = True, height: int | float | None = None) -> ft.Control:
     """Gráfico de rosca baseado nas fatias de ``ChartData.donut``."""
     values = list(data.donut)
-    sections = [fch.PieChartSection(value=item.value, title=item.title or item.label, color=resolved_color(item.color, index), radius=90, show_tooltip=True) for index, item in enumerate(values)]
+    sections = [fch.PieChartSection(value=item.value, title=item.title or item.label, color=resolved_color(item.color, index), radius=90) for index, item in enumerate(values)]
     def event(event: object) -> None:
         index = getattr(event, "section_index", None)
         item = values[index] if isinstance(index, int) and 0 <= index < len(values) else None

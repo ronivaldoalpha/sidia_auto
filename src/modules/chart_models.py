@@ -24,6 +24,7 @@ class AxisSpec:
 class ColumnDatum:
     label: str
     value: float
+    failure: float = 0
     color: str | ft.Colors | None = None
     tooltip: str | None = None
 

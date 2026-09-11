@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from modules.flet_charts import AxisSpec, ChartData, ColumnDatum, DonutDatum, LinePoint, LineSeries
+from modules.mycharts import AxisSpec, ChartData, ColumnDatum, DonutDatum, LinePoint, LineSeries
 
 
 def test_chart_data_is_observable_and_mutable_by_replacement():

@@ -1,17 +1,15 @@
 [project]
-name = "vault-site"
-version = "0.1.0"
+name = "sidia-manolo"
+version = "0.1.0-beta"
 description = "Aplicativo Flet para centralização Vault Site e Digifort"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 authors = [
-    { name = "Flet developer", email = "you@example.com" }
+    { name = "Ronivaldo", email = "ronivaldo.alpha@gmail.com" }
 ]
 dependencies = [
     "flet>=0.86.5",
     "flet-charts>=0.86.5",
-    "SQLAlchemy>=2.0,<3",
-    "pyodbc>=5.0",
 ]
 
 [dependency-groups]
@@ -29,10 +27,10 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.flet]
-org = "br.com.sidia"
-product = "Vault Site"
-company = "Sidia"
-copyright = "Copyright (C) 2023-2026 by Flet"
+org = "br.com.alphaformat"
+product = "Sidia Manolo"
+company = "AlphaFormat"
+copyright = "Copyright (C) 2023-2026 by AlphaFormat"
 
 [tool.flet.app]
 path = "src"

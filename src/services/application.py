@@ -50,6 +50,8 @@ class AppState:
     alert_enabled: bool = False
     alert_event: str | None = None
     event_preferences: dict[str, str] = field(default_factory=dict)
+    dashboard_start: datetime | None = None
+    dashboard_end: datetime | None = None
 
 
 class ApplicationService:
@@ -252,24 +254,19 @@ class ApplicationService:
 
     def metrics(self, start: datetime | None = None, end: datetime | None = None) -> dict[str, Any]:
         end = end or datetime.now()
-        start = start or (end - timedelta(days=7))
-        try:
-            accuracy = self.database.taxa_acuracidade(inicio=start, fim=end)
-        except Exception:
-            accuracy = {"total_eventos": 0, "falhas": 0, "taxa_acuracidade": 0.0}
+        start = start or (end - timedelta(days=30))
+        transactions: list[dict[str, Any]] = []
         failures: list[dict[str, Any]] = []
         try:
-            failures = self.database.logs.listar(
-                filters={}, order_by="ErrorDateTime", descending=True, limit=100
-            )
+            transactions = self.database.transacoes_com_mapeamento(inicio=start, fim=end, limit=10000)
         except Exception:
             pass
-        by_day: dict[str, int] = {}
-        for item in failures:
-            value = item.get("ErrorDateTime")
-            key = value.strftime("%d/%m") if hasattr(value, "strftime") else "Sem data"
-            by_day[key] = by_day.get(key, 0) + 1
-        return {**accuracy, "falhas_por_dia": by_day, "logs": failures}
+        try:
+            failures = self.database.logs.listar(order_by="ErrorDateTime", descending=True, limit=10000)
+        except Exception:
+            pass
+        from .dashboard_metrics import build_dashboard_metrics
+        return build_dashboard_metrics(transactions, failures, start=start, end=end)
 
     def close(self) -> None:
         self.database.dispose()
