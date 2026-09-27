@@ -137,4 +137,3 @@ def toggle_theme(page: ft.Page) -> None:
     page.theme_mode = (
         ft.ThemeMode.DARK if page.theme_mode != ft.ThemeMode.DARK else ft.ThemeMode.LIGHT
     )
-    page.update()

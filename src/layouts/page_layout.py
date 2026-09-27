@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import flet as ft
 
+from modules.theme import toggle_theme as _toggle_theme
+
 
 @ft.component
 def PageLayout(*, sidebar: ft.Control, interface: ft.Control, title: str, page: ft.Page) -> ft.Control:
     def toggle_theme(_: ft.ControlEvent) -> None:
-        page.theme_mode = ft.ThemeMode.DARK if page.theme_mode != ft.ThemeMode.DARK else ft.ThemeMode.LIGHT
-        page.update()
+        _toggle_theme(page)
 
     return ft.Row(expand=True, spacing=0, controls=[
         sidebar,

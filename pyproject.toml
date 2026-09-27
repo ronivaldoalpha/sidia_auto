@@ -8,18 +8,17 @@ authors = [
     { name = "Ronivaldo", email = "ronivaldo.alpha@gmail.com" }
 ]
 dependencies = [
-    "flet>=0.86.5",
-    "flet-charts>=0.86.5",
+    "flet[all]==0.86.5",
+    "flet-charts==0.86.5",
+    "sqlalchemy>=2.0",
+    "pyodbc"
 ]
 
 [dependency-groups]
 dev = [
-    "flet-cli>=0.86.5",
-    "flet-desktop>=0.86.5",
-    "flet-web>=0.86.5",
-    # Integration testing with `flet test` / pytest. The `test` extra brings in
-    # pytest, pytest-asyncio and the screenshot-comparison dependencies.
-    "flet[test]>=0.86.5",
+    "flet-cli==0.86.5",
+    "flet-desktop==0.86.5",
+    "flet-web==0.86.5"
 ]
 
 [tool.pytest.ini_options]

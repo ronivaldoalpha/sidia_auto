@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import flet as ft
 
@@ -87,37 +88,186 @@ def DatabaseDialog(*, open: bool, database: object, on_save: Callable[[dict[str,
     return ft.Container()
 
 
-def show_digifort_dialog(page: ft.Page, on_save: Callable[[DigifortConfig], tuple[bool, str] | None], *, initial: DigifortConfig | None = None) -> None:
+@ft.component
+def DigifortDialog(
+    *,
+    open: bool,
+    initial: DigifortConfig | None = None,
+    on_save: Callable[[DigifortConfig], tuple[bool, str] | None],
+    on_close: Callable[[], None],
+    on_result: Callable[[tuple[bool, str]], None] | None = None,
+) -> ft.Control:
+    """Diálogo de servidor Digifort declarativo com ``ft.use_dialog``.
+
+    Substitui a função imperativa ``show_digifort_dialog``. Suporta criação e
+    edição de servidores Digifort. O formulário é reiniciado via ``ft.use_effect``
+    quando ``initial`` muda (troca do servidor em edição).
+    """
     editing = initial is not None
-    name = ft.TextField(label="Nome do servidor", value=initial.name if initial else "", autofocus=True)
-    host = ft.TextField(label="Hostname / IP", value=initial.hostname if initial else "")
-    port = ft.TextField(label="Porta", value=str(initial.port if initial else 8601), keyboard_type=ft.KeyboardType.NUMBER)
-    user = ft.TextField(label="Usuário Digifort", value=initial.username if initial else "")
-    password = ft.TextField(label="Senha", value=initial.password if initial else "", password=True, can_reveal_password=True)
-    mode = ft.Dropdown(label="Autenticação", value=initial.auth_mode if initial else "safe", options=[
-        ft.DropdownOption("safe"), ft.DropdownOption("basic_http"), ft.DropdownOption("basic_params")
-    ])
+    name_val, set_name = ft.use_state(initial.name if initial else "")
+    host_val, set_host = ft.use_state(initial.hostname if initial else "")
+    port_val, set_port = ft.use_state(str(initial.port if initial else 8601))
+    user_val, set_user = ft.use_state(initial.username if initial else "")
+    pass_val, set_pass = ft.use_state(initial.password if initial else "")
+    mode_val, set_mode = ft.use_state(initial.auth_mode if initial else "safe")
+    error_val, set_error = ft.use_state("")
+
+    def sync_initial() -> None:
+        """Reinicia os campos quando o servidor sendo editado muda."""
+        set_name(initial.name if initial else "")
+        set_host(initial.hostname if initial else "")
+        set_port(str(initial.port if initial else 8601))
+        set_user(initial.username if initial else "")
+        set_pass(initial.password if initial else "")
+        set_mode(initial.auth_mode if initial else "safe")
+        set_error("")
+
+    ft.use_effect(sync_initial, dependencies=[initial])
 
     def save(_: ft.ControlEvent) -> None:
         try:
-            config = DigifortConfig(name.value or host.value, host.value, int(port.value or 8601), user.value or "", password.value or "", mode.value or "safe")
+            config = DigifortConfig(
+                name_val or host_val, host_val, int(port_val or "8601"),
+                user_val, pass_val, mode_val,
+            )
             if not config.hostname:
                 raise ValueError("Hostname é obrigatório")
             result = on_save(config)
-            page.pop_dialog()
             if result is not None:
                 ok, message = result
-                show_message(page, message, error=not ok)
+                if ok:
+                    on_close()
+                    if on_result:
+                        on_result(result)
+                else:
+                    # Mantém o diálogo aberto e exibe o erro inline.
+                    set_error(message)
+            else:
+                on_close()
         except ValueError as exc:
-            port.error_text = str(exc)
-            page.update()
+            set_error(str(exc))
 
-    page.show_dialog(ft.AlertDialog(
+    ft.use_dialog(ft.AlertDialog(
         modal=True,
         title=ft.Text("Editar servidor Digifort" if editing else "Adicionar servidor Digifort"),
-        content=ft.Column([name, host, port, user, password, mode], tight=True, width=420),
+        content=ft.Column([
+            ft.TextField(label="Nome do servidor", value=name_val, autofocus=True,
+                         on_change=lambda e: set_name(e.control.value or "")),
+            ft.TextField(label="Hostname / IP", value=host_val,
+                         on_change=lambda e: set_host(e.control.value or "")),
+            ft.TextField(label="Porta", value=port_val, keyboard_type=ft.KeyboardType.NUMBER,
+                         on_change=lambda e: set_port(e.control.value or "")),
+            ft.TextField(label="Usuário Digifort", value=user_val,
+                         on_change=lambda e: set_user(e.control.value or "")),
+            ft.TextField(label="Senha", value=pass_val, password=True, can_reveal_password=True,
+                         on_change=lambda e: set_pass(e.control.value or "")),
+            ft.Dropdown(
+                label="Autenticação", value=mode_val,
+                options=[ft.DropdownOption("safe"), ft.DropdownOption("basic_http"), ft.DropdownOption("basic_params")],
+                on_select=lambda e: set_mode(e.control.value or "safe"),
+            ),
+            ft.Text(error_val, color=ft.Colors.ERROR, visible=bool(error_val)),
+        ], tight=True, width=420),
         actions=[
-            ft.TextButton("Cancelar", on_click=lambda _: page.pop_dialog()),
-            ft.FilledButton("Salvar" if editing else "Adicionar", style=button_style(ButtonVariant.POSITIVE), on_click=save),
+            ft.TextButton("Cancelar", on_click=lambda _: on_close()),
+            ft.FilledButton(
+                "Salvar" if editing else "Adicionar",
+                style=button_style(ButtonVariant.POSITIVE),
+                on_click=save,
+            ),
         ],
-    ))
+    ) if open else None)
+    return ft.Container()
+
+
+@ft.component
+def ConfirmDeleteDialog(
+    *,
+    deleting_name: str | None,
+    on_confirm: Callable[[str], None],
+    on_cancel: Callable[[], None],
+) -> ft.Control:
+    """Diálogo de confirmação de exclusão de servidor declarativo com ``ft.use_dialog``."""
+    ft.use_dialog(ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Excluir servidor?"),
+        content=ft.Text(f"A conexão {deleting_name} será removida da configuração local."),
+        actions=[
+            ft.TextButton("Cancelar", on_click=lambda _: on_cancel()),
+            ft.FilledButton(
+                "Excluir",
+                style=button_style(ButtonVariant.NEGATIVE),
+                on_click=lambda _: on_confirm(deleting_name),  # type: ignore[arg-type]
+            ),
+        ],
+    ) if deleting_name is not None else None)
+    return ft.Container()
+
+
+@ft.component
+def EditBindingDialog(
+    *,
+    row: dict[str, Any] | None,
+    cameras: list[str],
+    servers: list[ft.DropdownOption],
+    event_types: list[str],
+    on_save: Callable,
+    on_close: Callable[[], None],
+) -> ft.Control:
+    """Diálogo de configuração de vínculo porta-câmera declarativo com ``ft.use_dialog``.
+
+    Os campos são reiniciados via ``ft.use_effect`` cada vez que uma nova
+    linha é selecionada para edição (``row`` muda).
+    """
+    camera_val, set_camera = ft.use_state("")
+    server_val, set_server = ft.use_state("")
+    enabled_val, set_enabled = ft.use_state(False)
+    event_val, set_event = ft.use_state("")
+
+    def reset_form() -> None:
+        set_camera("")
+        set_server("")
+        set_enabled(False)
+        set_event("")
+
+    ft.use_effect(reset_form, dependencies=[row])
+
+    ft.use_dialog(ft.AlertDialog(
+        modal=True,
+        title=ft.Text(f"Configurar {row['TagName']}") if row else ft.Text(""),
+        content=ft.Column([
+            ft.Dropdown(
+                label="Câmera Digifort",
+                options=[ft.DropdownOption(c) for c in cameras],
+                value=camera_val or None,
+                hint_text="Digite para pesquisar",
+                on_select=lambda e: set_camera(e.control.value or ""),
+            ),
+            ft.Dropdown(
+                label="Servidor",
+                options=servers,
+                value=server_val or None,
+                on_select=lambda e: set_server(e.control.value or ""),
+            ),
+            ft.Switch(
+                label="Ativar alerta",
+                value=enabled_val,
+                on_change=lambda e: set_enabled(bool(e.control.value)),
+            ),
+            ft.Dropdown(
+                label="Tipo de evento",
+                options=[ft.DropdownOption(x) for x in event_types],
+                value=event_val or None,
+                on_select=lambda e: set_event(e.control.value or ""),
+            ),
+        ], tight=True, width=430),
+        actions=[
+            ft.TextButton("Cancelar", on_click=lambda _: on_close()),
+            ft.FilledButton(
+                "Salvar",
+                style=button_style(ButtonVariant.POSITIVE),
+                on_click=lambda _: on_save(row, camera_val, server_val, enabled_val, event_val) if row else None,
+            ),
+        ],
+    ) if row is not None else None)
+    return ft.Container()

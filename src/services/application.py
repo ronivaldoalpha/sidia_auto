@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, TYPE_CHECKING
 
+import flet as ft
+
 if TYPE_CHECKING:
     from .PyVaultsiteDB import Vault
     from .pydigifort import Servidor
@@ -42,6 +44,7 @@ class ServiceHealth:
 
 
 @dataclass
+@ft.observable
 class AppState:
     digifort: list[DigifortConfig] = field(default_factory=list)
     health: dict[str, ServiceHealth] = field(default_factory=dict)
