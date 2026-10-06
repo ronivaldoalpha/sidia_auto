@@ -100,7 +100,7 @@ tbl_mapping = Table(
 )
 
 log_requests = Table(
-    "logrequeststrasaction", metadata,
+    "LogRequestsTransaction", metadata,
     Column("Id", Integer, primary_key=True), Column("ErrorDateTime", DateTime),
     Column("TrController", Unicode(30)), Column("TargetURL", String(1000)),
     Column("ErrorMessage", Unicode(4000)), Column("PayloadMessage", String(500)),
@@ -298,7 +298,7 @@ class Vault:
             engine.dispose()
 
     def tabelas_dependentes(self) -> list[str]:
-        return ["Controller", "tblTransaction", "tblMappingControllerCam", "logrequeststrasaction", "SystemSettings"]
+        return ["Controller", "tblTransaction", "tblMappingControllerCam", "LogRequestsTransaction", "SystemSettings"]
 
     def verificar_tabelas_dependentes(self) -> list[str]:
         """Retorna as tabelas dbo ausentes no banco já conectado."""
