@@ -28,7 +28,7 @@ def main(page: ft.Page) -> None:
 
     @ft.component
     def services() -> ft.Control:
-        return route_page(page=page, service=service, title="Serviços e conexões", interface=ServicesInterface(service=service, page=page))
+        return route_page(page=page, service=service, title="Serviços e conexões", interface=ServicesInterface(service=service, state=service.state, page=page))
 
     @ft.component
     def Root() -> ft.Control:
@@ -47,4 +47,9 @@ def main(page: ft.Page) -> None:
 if __name__ == "__main__":
     # Hash strategy evita que o servidor Web precise resolver cada rota
     # como um caminho físico e preserva deep links no Flet Web.
-    ft.run(main, view=ft.AppView.WEB_BROWSER, port=8500,route_url_strategy="hash")
+    ft.run(
+        main=main, 
+        view=ft.AppView.WEB_BROWSER, 
+        port=8500,
+        route_url_strategy="hash"
+    )

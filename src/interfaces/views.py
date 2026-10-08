@@ -11,7 +11,7 @@ from models.paginated_table import PaginatedTable
 from models.sidebar import Sidebar
 from modules.styles import ButtonVariant, button_style, card_container_style
 from modules.mycharts import AxisSpec, ChartData, ColumnChart, ColumnDatum, DonutChart, DonutDatum, LineChart, LinePoint, LineSeries
-from services.application import ApplicationService, DigifortConfig, ServiceHealth
+from services.application import AppState, ApplicationService, DigifortConfig, ServiceHealth
 
 
 def _load_dashboard_metrics(
@@ -199,7 +199,7 @@ def BindingsInterface(*, service: ApplicationService, page: ft.Page) -> ft.Contr
 
 
 @ft.component
-def ServicesInterface(*, service: ApplicationService, page: ft.Page) -> ft.Control:
+def ServicesInterface(*, service: ApplicationService, state: AppState, page: ft.Page) -> ft.Control:
     database_dialog_open, set_database_dialog_open = ft.use_state(False)
     digifort_dialog_open, set_digifort_dialog_open = ft.use_state(False)
     editing_config, set_editing_config = ft.use_state(None)
@@ -223,15 +223,15 @@ def ServicesInterface(*, service: ApplicationService, page: ft.Page) -> ft.Contr
         set_deleting_name(None)
         show_message(page, result[1], error=not result[0])
 
-    database = service.state.health.get("database", ServiceHealth("Banco Vault Site", "database", None, r"Padrão: localhost\sqlexpress • Windows Integrated Security"))
+    database = state.health.get("database", ServiceHealth("Banco Vault Site", "database", None, r"Padrão: localhost\sqlexpress • Windows Integrated Security"))
     cards = [_service_card(
         database,
         on_edit=lambda: set_database_dialog_open(True),
         on_delete=None,
         on_refresh=lambda: _check_database(service, page),
     )]
-    for config in service.state.digifort:
-        health = service.state.health.get(config.name, ServiceHealth(config.name, "digifort", None, f"{config.hostname}:{config.port} • autenticação {config.auth_mode}"))
+    for config in state.digifort:
+        health = state.health.get(config.name, ServiceHealth(config.name, "digifort", None, f"{config.hostname}:{config.port} • autenticação {config.auth_mode}"))
         cards.append(_service_card(
             health,
             on_edit=lambda item=config: open_edit_digifort(item),
@@ -289,13 +289,11 @@ def _service_card(item: ServiceHealth, *, on_edit: Callable[[], None] | None, on
 def _check_database(service: ApplicationService, page: ft.Page) -> None:
     health = service.check_database()
     show_message(page, f"Banco: {health.label} — {health.detail}", error=health.online is False)
-    # AppState é @ft.observable — ServicesInterface re-renderiza automaticamente.
 
 
 def _check_server(service: ApplicationService, page: ft.Page, config: DigifortConfig) -> None:
     health = service.check_digifort(config)
     show_message(page, f"{config.name}: {health.label}", error=health.online is False)
-    # AppState é @ft.observable — ServicesInterface re-renderiza automaticamente.
 
 
 def route_page(*, page: ft.Page, service: ApplicationService, title: str, interface: ft.Control) -> ft.Control:
