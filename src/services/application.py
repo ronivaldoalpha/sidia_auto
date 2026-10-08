@@ -234,7 +234,7 @@ class ApplicationService:
     def check_digifort(self, config: DigifortConfig) -> ServiceHealth:
         try:
             payload = config.client().informacoes_servidor()
-            detail = "GET ServerInfo respondeu corretamente"
+            detail = "GET Server/GetInfo respondeu corretamente"
             if payload:
                 detail += f" • {str(payload)[:160]}"
             health = ServiceHealth(config.name, "digifort", True, detail, datetime.now())

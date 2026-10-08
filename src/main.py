@@ -47,4 +47,4 @@ def main(page: ft.Page) -> None:
 if __name__ == "__main__":
     # Hash strategy evita que o servidor Web precise resolver cada rota
     # como um caminho físico e preserva deep links no Flet Web.
-    ft.run(main, view=ft.AppView.WEB_BROWSER, port=8600,route_url_strategy="hash")
+    ft.run(main, view=ft.AppView.WEB_BROWSER, port=8500,route_url_strategy="hash")

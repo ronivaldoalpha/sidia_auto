@@ -88,14 +88,25 @@ class DigifortResponse:
 class _Grupo:
     """Namespace leve para permitir ``servidor.cameras.listar()``."""
 
-    def __init__(self, servidor: "Servidor", grupo: str):
+    def __init__(
+        self,
+        servidor: "Servidor",
+        grupo: str,
+        *,
+        list_command: str | None = None,
+        status_command: str | None = "GetStatus",
+    ):
         self._servidor, self._grupo = servidor, grupo
+        self._list_command, self._status_command = list_command, status_command
 
     def listar(self, **params: Any) -> Any:
-        return self._servidor.request(f"/Interface/{self._grupo}/Get{self._grupo}", params=params).data
+        command = self._list_command or f"Get{self._grupo}"
+        return self._servidor.request(f"/Interface/{self._grupo}/{command}", params=params).data
 
     def status(self, **params: Any) -> Any:
-        return self._servidor.request(f"/Interface/{self._grupo}/GetStatus", params=params).data
+        if self._status_command is None:
+            raise DigifortError(f"A referência da API não documenta uma consulta de status para {self._grupo}")
+        return self._servidor.request(f"/Interface/{self._grupo}/{self._status_command}", params=params).data
 
     def ativar(self, **params: Any) -> Any:
         params = dict(params, Action="Activate")
@@ -141,14 +152,14 @@ class Servidor:
         self._nonce: Optional[str] = None
         self._auth_lock = threading.RLock()
         # Namespaces de uso frequente; request() cobre o restante da API.
-        self.cameras = _Grupo(self, "Cameras")
-        self.users = _Grupo(self, "Users")
-        self.groups = _Grupo(self, "Groups")
-        self.events = _Grupo(self, "Events")
-        self.lpr = _Grupo(self, "LPR")
-        self.analytics = _Grupo(self, "Analytics")
+        self.cameras = _Grupo(self, "Cameras", list_command="GetCameras")
+        self.users = _Grupo(self, "Users", list_command="GetUsers", status_command=None)
+        self.groups = _Grupo(self, "Users", list_command="GetGroups", status_command=None)
+        self.events = _Grupo(self, "GlobalEvents", list_command="GetGlobalEvents", status_command=None)
+        self.lpr = _Grupo(self, "LPR", list_command="GetLPRConfigurations", status_command=None)
+        self.analytics = _Grupo(self, "Analytics", list_command="GetAnalyticsConfigurations")
         self.maps = _Grupo(self, "Maps")
-        self.monitors = _Grupo(self, "VirtualMatrix")
+        self.monitors = _Grupo(self, "VirtualMatrix", list_command="GetActiveMonitors", status_command=None)
 
     @staticmethod
     def _coerce_auth(auth: Any) -> Optional[AuthConfig]:
@@ -177,8 +188,9 @@ class Servidor:
                 return
             result = self._raw_request("/Interface/CreateAuthSession", {}, include_auth=False)
             session = result.data.get("Session", result.data) if isinstance(result.data, dict) else {}
-            self._session_id = str(session.get("ID", session.get("Id", "")))
-            self._nonce = str(session.get("NOnce", session.get("Nonce", "")))
+            session_fields = {str(key).casefold(): value for key, value in session.items()}
+            self._session_id = str(session_fields.get("id", ""))
+            self._nonce = str(session_fields.get("nonce", ""))
             if not self._session_id or not self._nonce:
                 raise DigifortError("CreateAuthSession não retornou ID e NOnce")
             password_hash = hashlib.md5(self.auth.password.encode()).hexdigest().upper()
@@ -307,22 +319,22 @@ class Servidor:
         return self.request("/Interface/GetAPIVersion").data
 
     def informacoes_servidor(self) -> Any:
-        return self.request("/Interface/Server/GetServerInfo").data
+        return self.request("/Interface/Server/GetInfo").data
 
     def codigo_maquina(self) -> Any:
         return self.request("/Interface/Server/GetMachineCode").data
 
     def licenciamento(self, **params: Any) -> Any:
-        return self.request("/Interface/Server/GetLicenseInfo", params).data
+        return self.request("/Interface/Server/GetLicenses", params).data
 
     def uso_servidor(self, **params: Any) -> Any:
-        return self.request("/Interface/Server/GetServerUsage", params).data
+        return self.request("/Interface/Server/GetUsage", params).data
 
     def listar_cameras(self, **params: Any) -> Any:
         return self.request("/Interface/Cameras/GetCameras", params).data
 
     def status_cameras(self, **params: Any) -> Any:
-        return self.request("/Interface/Cameras/GetCameraStatus", params).data
+        return self.request("/Interface/Cameras/GetStatus", params).data
 
     def snapshot(self, camera: str, **params: Any) -> bytes:
         """Obtém e retorna os bytes da imagem JPEG da câmera."""
