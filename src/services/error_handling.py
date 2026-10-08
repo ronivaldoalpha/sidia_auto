@@ -42,8 +42,11 @@ def classify_error(exc: BaseException, *, operation: str = "operação") -> Erro
     database = isinstance(exc, (SQLAlchemyError, DBAPIError, InterfaceError, OperationalError)) or any(
         token in lower for token in ("pyodbc", "sql server", "sqlalchemy", "odbc", "database", "banco de dados")
     )
+    missing_object = any(token in lower for token in ("42s02", "invalid object name", "nome de objeto"))
     credential = any(token in lower for token in ("18456", "28000", "4060", "401", "403", "login failed", "falha de logon", "credential", "credencial", "senha"))
-    if database and credential:
+    if missing_object:
+        message = "A consulta não pôde ser concluída porque um objeto necessário não foi encontrado no banco configurado."
+    elif database and credential:
         message = "Banco de dados não está conectado: credenciais inválidas ou banco sem acesso."
     elif database:
         message = "Banco de dados não está conectado. Verifique o SQL Server e a configuração do arquivo secreto."

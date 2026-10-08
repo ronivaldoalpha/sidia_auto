@@ -101,8 +101,10 @@ tbl_mapping = Table(
 
 log_requests = Table(
     "LogRequestsTransaction", metadata,
-    Column("Id", Integer, primary_key=True), Column("ErrorDateTime", DateTime),
-    Column("TrController", Unicode(30)), Column("TargetURL", String(1000)),
+    Column("Id", Integer, primary_key=True),
+    Column("RequestDateTime", DateTime, server_default=func.getdate()),
+    Column("TrController", Unicode(30)), Column("TargetServerIP", String(50)),
+    Column("TargetURL", String(1000)), Column("RequestStatus", String(20)),
     Column("ErrorMessage", Unicode(4000)), Column("PayloadMessage", String(500)),
     schema="dbo",
 )
@@ -339,15 +341,42 @@ class Vault:
             return [dict(row) for row in session.execute(statement).mappings().all()]
 
     def taxa_acuracidade(self, *, inicio: datetime, fim: datetime) -> dict[str, Any]:
-        """Calcula eventos, falhas e percentual de acuracidade no período."""
+        """Calcula sucesso e falha a partir do resultado registrado de cada requisição."""
         with self.session() as session:
-            total = session.scalar(select(func.count()).select_from(tbl_transaction).where(
-                and_(tbl_transaction.c.TrDateTime >= inicio, tbl_transaction.c.TrDateTime < fim))) or 0
-            failures = session.scalar(select(func.count()).select_from(log_requests).where(
-                and_(log_requests.c.ErrorDateTime >= inicio, log_requests.c.ErrorDateTime < fim))) or 0
-        accuracy = 100.0 if not total else max(0.0, (int(total) - int(failures)) * 100.0 / int(total))
-        return {"inicio": inicio, "fim": fim, "total_eventos": int(total),
-                "falhas": int(failures), "taxa_acuracidade": round(accuracy, 2)}
+            period = and_(
+                log_requests.c.RequestDateTime >= inicio,
+                log_requests.c.RequestDateTime < fim,
+            )
+            successes = session.scalar(
+                select(func.count()).select_from(log_requests).where(
+                    and_(period, log_requests.c.RequestStatus == "Sucesso")
+                )
+            ) or 0
+            failures = session.scalar(
+                select(func.count()).select_from(log_requests).where(
+                    and_(period, log_requests.c.RequestStatus == "Falha")
+                )
+            ) or 0
+        successes, failures = int(successes), int(failures)
+        total = successes + failures
+        accuracy = round(successes * 100.0 / total, 2) if total else 0.0
+        return {"inicio": inicio, "fim": fim, "total_eventos": total,
+                "sucessos": successes, "falhas": failures, "taxa_acuracidade": accuracy}
+
+    def requisicoes_por_periodo(self, *, inicio: datetime, fim: datetime) -> list[dict[str, Any]]:
+        """Lista resultados de requisição no período, do mais recente ao mais antigo."""
+        statement = (
+            select(log_requests)
+            .where(
+                and_(
+                    log_requests.c.RequestDateTime >= inicio,
+                    log_requests.c.RequestDateTime < fim,
+                )
+            )
+            .order_by(log_requests.c.RequestDateTime.desc())
+        )
+        with self.session() as session:
+            return [dict(row) for row in session.execute(statement).mappings().all()]
 
     def executar_processador_transactions(self) -> list[dict[str, Any]]:
         """Executa a stored procedure documentada, sem concatenar parâmetros."""

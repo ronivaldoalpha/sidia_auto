@@ -1,12 +1,16 @@
+Metadata-Version: 2.4
+Name: sidia-manolo
+Version: 0.1.0b0
+Summary: Aplicativo Flet para centralização Vault Site e Digifort
+Author-email: Ronivaldo <ronivaldo.alpha@gmail.com>
+Requires-Python: >=3.14
+Description-Content-Type: text/markdown
+Requires-Dist: flet[all]==1.0.3
+Requires-Dist: flet-charts==1.0.3
+Requires-Dist: sqlalchemy>=2.0
+Requires-Dist: pyodbc
+
 # SidiaAuto app
-
-## Request accuracy
-
-`dbo.LogRequestsTransaction` is the source of truth for request outcomes. Each
-row is classified by `RequestStatus` (`Sucesso` or `Falha`), timestamped by
-`RequestDateTime`, and grouped by the Digifort server in `TargetServerIP`.
-Dashboard accuracy is calculated as `Sucesso / (Sucesso + Falha) * 100` for
-the selected period; daily and per-server charts use the same status counts.
 
 ## Run the app
 

@@ -81,10 +81,7 @@ class ApplicationService:
 
     def controller_tags(self) -> list[dict[str, Any]]:
         """Retorna TagName/Desc distintos, preparados para a tabela de vínculo."""
-        try:
-            rows = self.database.controllers.listar(order_by="TagName")
-        except Exception:
-            rows = []
+        rows = self.database.controllers.listar(order_by="TagName")
         unique: dict[str, dict[str, Any]] = {}
         for row in rows:
             tag = str(row.get("TagName") or "").strip()
@@ -258,18 +255,13 @@ class ApplicationService:
     def metrics(self, start: datetime | None = None, end: datetime | None = None) -> dict[str, Any]:
         end = end or datetime.now()
         start = start or (end - timedelta(days=30))
-        transactions: list[dict[str, Any]] = []
-        failures: list[dict[str, Any]] = []
-        try:
-            transactions = self.database.transacoes_com_mapeamento(inicio=start, fim=end, limit=10000)
-        except Exception:
-            pass
-        try:
-            failures = self.database.logs.listar(order_by="ErrorDateTime", descending=True, limit=10000)
-        except Exception:
-            pass
+        requests = self.database.requisicoes_por_periodo(inicio=start, fim=end)
         from .dashboard_metrics import build_dashboard_metrics
-        return build_dashboard_metrics(transactions, failures, start=start, end=end)
+        return build_dashboard_metrics(
+            requests,
+            start=start,
+            end=end,
+        )
 
     def close(self) -> None:
         self.database.dispose()

@@ -14,15 +14,19 @@ def main(page: ft.Page) -> None:
     page.window.maximized = True
     page.on_disconnect = lambda _: service.close()
 
+    @ft.component
     def dashboard() -> ft.Control:
         return route_page(page=page, service=service, title="Visão geral", interface=DashboardInterface(service=service, page=page))
 
+    @ft.component
     def bindings() -> ft.Control:
         return route_page(page=page, service=service, title="Vínculos porta-câmera", interface=BindingsInterface(service=service, page=page))
 
+    @ft.component
     def dashboard_detail() -> ft.Control:
         return route_page(page=page, service=service, title="Relatório detalhado", interface=DashboardReportInterface(service=service, page=page))
 
+    @ft.component
     def services() -> ft.Control:
         return route_page(page=page, service=service, title="Serviços e conexões", interface=ServicesInterface(service=service, page=page))
 
@@ -43,4 +47,4 @@ def main(page: ft.Page) -> None:
 if __name__ == "__main__":
     # Hash strategy evita que o servidor Web precise resolver cada rota
     # como um caminho físico e preserva deep links no Flet Web.
-    ft.run(main, view=ft.AppView.WEB_BROWSER, port=8601,route_url_strategy="hash")
+    ft.run(main, view=ft.AppView.WEB_BROWSER, port=8600,route_url_strategy="hash")

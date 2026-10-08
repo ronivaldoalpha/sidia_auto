@@ -3,6 +3,7 @@ from __future__ import annotations
 import flet as ft
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import Any
 
 from layouts.page_layout import PageLayout
 from models.dialogs import ConfirmDeleteDialog, DatabaseDialog, DigifortDialog, EditBindingDialog, show_message
@@ -11,6 +12,23 @@ from models.sidebar import Sidebar
 from modules.styles import ButtonVariant, button_style, card_container_style
 from modules.mycharts import AxisSpec, ChartData, ColumnChart, ColumnDatum, DonutChart, DonutDatum, LineChart, LinePoint, LineSeries
 from services.application import ApplicationService, DigifortConfig, ServiceHealth
+
+
+def _load_dashboard_metrics(
+    service: ApplicationService,
+    *,
+    start: datetime,
+    end: datetime,
+    operation: str,
+) -> tuple[dict[str, Any], str | None]:
+    try:
+        return service.metrics(start=start, end=end), None
+    except Exception as exc:
+        from services.dashboard_metrics import build_dashboard_metrics
+        from services.error_handling import log_error
+
+        info = log_error(operation, exc, context={"start": start.isoformat(), "end": end.isoformat()})
+        return build_dashboard_metrics([], start=start, end=end), info.user_message
 
 
 def _card(content: ft.Control, *, accent: str | None = None) -> ft.Control:
@@ -30,6 +48,7 @@ def DashboardInterface(*, service: ApplicationService, page: ft.Page) -> ft.Cont
     applied_start, set_applied_start = ft.use_state(default_start)
     applied_end, set_applied_end = ft.use_state(today.isoformat())
     error, set_error = ft.use_state("")
+    query_error: str | None = None
 
     def parse_period() -> tuple[datetime, datetime] | None:
         try:
@@ -48,7 +67,15 @@ def DashboardInterface(*, service: ApplicationService, page: ft.Page) -> ft.Cont
     else:
         start, end = period
         service.state.dashboard_start, service.state.dashboard_end = start, end
-        metrics = service.metrics(start=start, end=end)
+        metrics, query_error = _load_dashboard_metrics(
+            service, start=start, end=end, operation="consultar indicadores da dashboard",
+        )
+
+    ft.use_dialog(ft.SnackBar(
+        content=ft.Text(query_error or ""),
+        bgcolor=ft.Colors.ERROR,
+        show_close_icon=True,
+    ) if query_error else None)
 
     start_field = ft.TextField(label="Início", value=start_text, width=150)
     end_field = ft.TextField(label="Fim", value=end_text, width=150)
@@ -66,12 +93,13 @@ def DashboardInterface(*, service: ApplicationService, page: ft.Page) -> ft.Cont
         else:
             set_error("Corrija o período antes de detalhar.")
 
+    failure_accuracy = metrics["falhas"] * 100 / metrics["total"] if metrics["total"] else 0.0
     chart_data = ChartData(
         lines=[
             LineSeries("Sucessos", tuple(LinePoint(i, item["sucessos"], label=item["data"].strftime("%d/%m")) for i, item in enumerate(metrics["dias"])), color="#7AF27A"),
             LineSeries("Falhas", tuple(LinePoint(i, item["falhas"], label=item["data"].strftime("%d/%m")) for i, item in enumerate(metrics["dias"])), color=ft.Colors.ERROR),
         ],
-        donut=[DonutDatum("Sucessos", metrics["sucessos"], color="#7AF27A", title=f"{metrics['acuracidade']:.1f}%"), DonutDatum("Falhas", metrics["falhas"], color=ft.Colors.ERROR, title=f"{100 - metrics['acuracidade']:.1f}%")],
+        donut=[DonutDatum("Sucessos", metrics["sucessos"], color="#7AF27A", title=f"{metrics['acuracidade']:.1f}%"), DonutDatum("Falhas", metrics["falhas"], color=ft.Colors.ERROR, title=f"{failure_accuracy:.1f}%")],
         columns=[ColumnDatum(item["servidor"], item["sucessos"], failure=item["falhas"], color="#7AF27A") for item in metrics["servidores"]],
     )
     line_axis = AxisSpec(title="Dia", labels=tuple((i, item["data"].strftime("%d/%m")) for i, item in enumerate(metrics["dias"]) if i % 5 == 0))
@@ -98,7 +126,14 @@ def DashboardInterface(*, service: ApplicationService, page: ft.Page) -> ft.Cont
 def DashboardReportInterface(*, service: ApplicationService, page: ft.Page) -> ft.Control:
     start = service.state.dashboard_start or (datetime.now() - timedelta(days=29))
     end = service.state.dashboard_end or datetime.now()
-    metrics = service.metrics(start=start, end=end)
+    metrics, query_error = _load_dashboard_metrics(
+        service, start=start, end=end, operation="consultar relatório detalhado",
+    )
+    ft.use_dialog(ft.SnackBar(
+        content=ft.Text(query_error or ""),
+        bgcolor=ft.Colors.ERROR,
+        show_close_icon=True,
+    ) if query_error else None)
     rows = [{**row, "DataHora": row["DataHora"].strftime("%d/%m/%Y %H:%M:%S")} for row in metrics["rows"]]
     return ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=16, controls=[
         ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, tooltip="Voltar", on_click=lambda _: page.navigate("/")), ft.Text("Relatório detalhado", size=22, weight=ft.FontWeight.BOLD), ft.Container(expand=True), ft.Text(f"{start:%d/%m/%Y} a {(end - timedelta(microseconds=1)):%d/%m/%Y}", color=ft.Colors.ON_SURFACE_VARIANT)]),
@@ -116,7 +151,21 @@ def BindingsInterface(*, service: ApplicationService, page: ft.Page) -> ft.Contr
     reload, set_reload = ft.use_state(0)
     editing_row, set_editing_row = ft.use_state(None)
 
-    tags = service.controller_tags()
+    query_error: str | None = None
+    try:
+        tags = service.controller_tags()
+    except Exception as exc:
+        from services.error_handling import log_error
+
+        info = log_error("consultar controladoras para vínculos", exc)
+        query_error = info.user_message
+        tags = []
+    ft.use_dialog(ft.SnackBar(
+        content=ft.Text(query_error or ""),
+        bgcolor=ft.Colors.ERROR,
+        show_close_icon=True,
+    ) if query_error else None)
+
     cameras = service.cameras()
     servers = [ft.DropdownOption(item.name) for item in service.state.digifort]
     rows: list[dict[str, object]] = [
