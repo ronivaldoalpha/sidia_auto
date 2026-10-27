@@ -33,5 +33,7 @@ src/utils/secrets.py
 tests/test_app_smoke.py
 tests/test_dashboard_metrics.py
 tests/test_database_table_names.py
+tests/test_digifort_connection.py
 tests/test_flet_charts.py
 tests/test_main.py
+tests/test_query_error_feedback.py

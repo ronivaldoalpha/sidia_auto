@@ -50,6 +50,6 @@ if __name__ == "__main__":
     ft.run(
         main=main, 
         view=ft.AppView.WEB_BROWSER, 
-        port=8500,
+        port=8600,
         route_url_strategy="hash"
     )

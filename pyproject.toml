@@ -8,17 +8,10 @@ authors = [
     { name = "Ronivaldo", email = "ronivaldo.alpha@gmail.com" }
 ]
 dependencies = [
-    "flet[all]==1.0.3",
-    "flet-charts==1.0.3",
+    "flet[all]>=1.0.3",
+    "flet-charts>=1.0.3",
     "sqlalchemy>=2.0",
     "pyodbc"
-]
-
-[dependency-groups]
-dev = [
-    "flet-cli==1.0.3",
-    "flet-desktop==1.0.3",
-    "flet-web==1.0.3"
 ]
 
 [tool.pytest.ini_options]
